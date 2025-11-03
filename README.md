@@ -556,12 +556,6 @@ low_var_loader = create_dataloader(low_var_dataset, batch_size=128)
 
 ## Next Steps
 
-### Completed Tasks
-
-✅ **Dataset Creation**: Pipeline for creating filtered datasets with DFT  
-✅ **Visualization**: Tools for visualizing filtered images  
-✅ **Validation**: Both variance test and power spectrum analysis implemented
-
 ### Immediate Tasks
 
 1. **Run Validation**: Execute `bash experiment_scripts/run_validation.sh` to verify datasets
