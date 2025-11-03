@@ -1,0 +1,19 @@
+======================================================================
+DIRECT VARIANCE TEST RESULTS
+======================================================================
+
+Configuration:
+  Cutoff radius: 15
+  Number of samples: 1000
+  Natural dataset: /mnt/align3_drive/hectorxm/adversarial-redundancy/data/cifar10_natural
+  Filtered dataset: /mnt/align3_drive/hectorxm/adversarial-redundancy/data/filtered_r15
+
+Variance Analysis:
+  Original dataset variance:            188.51 (100.00%)
+  High-variance dataset variance:       183.46 ( 97.32%)
+  Low-variance dataset variance:          0.26 (  0.14%)
+  Total accounted:                              ( 97.46%)
+
+Interpretation:
+  ✓ PASS: High-variance dataset captures 97.3% of variance
+  ✓ PASS: Low-variance dataset captures only 0.1% of variance

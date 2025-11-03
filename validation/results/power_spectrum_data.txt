@@ -1,0 +1,32 @@
+======================================================================
+POWER SPECTRUM ANALYSIS RESULTS
+======================================================================
+
+Configuration:
+  Number of samples: 500
+  Natural dataset: /mnt/align3_drive/hectorxm/adversarial-redundancy/data/cifar10_natural
+  Image size: (32, 32, 3)
+
+Power Spectrum Statistics:
+  Total frequency components: 1024
+  Maximum power: 2.509282e+05
+  Minimum power: 5.884122e-02
+  Power ratio (max/min): 4.26e+06
+
+Cumulative Power Distribution:
+  50% of power in first    1 components (0.1% of all components)
+  80% of power in first    1 components (0.1% of all components)
+  90% of power in first    6 components (0.6% of all components)
+  95% of power in first   25 components (2.4% of all components)
+  99% of power in first  199 components (19.4% of all components)
+
+Interpretation:
+  The sharp 'elbow' in the power spectrum confirms that variance
+  is concentrated in low-frequency components. This justifies the
+  filtering approach: low-pass filters capture high-variance
+  components, while high-pass filters capture low-variance components.
+
+Cutoff Radii Analysis:
+  r=5: Captures ~96.6% of total power
+  r=10: Captures ~99.0% of total power
+  r=15: Captures ~99.8% of total power

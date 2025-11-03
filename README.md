@@ -20,10 +20,14 @@ adversarial-redundancy/
 │   ├── utils.py            # CIFAR-10 loading and data management utilities
 │   ├── pipeline.py         # Complete end-to-end pipeline script
 │   └── __init__.py         # (optional) Package initialization
+├── validation/
+│   ├── variance_test.py             # Direct pixel-wise variance validation
+│   └── power_spectrum.py            # Fourier power spectrum analysis
 ├── experiment_scripts/
 │   ├── hyperparam_search_dft.sh      # Run pipeline with multiple radii
 │   ├── visualize_first_images.sh    # Visualize single images from datasets
-│   └── visualize_comparison.sh      # Visualize multiple images for comparison
+│   ├── visualize_comparison.sh      # Visualize multiple images for comparison
+│   └── run_validation.sh            # Run both validation methods
 ├── help.txt            # Detailed implementation guide and references
 └── README.md           # This file
 ```
@@ -195,6 +199,67 @@ Implements 2D Discrete Fourier Transform filtering for image processing.
 - Efficient batch processing with progress bars
 - Automatic data normalization and type handling
 
+### `validation/variance_test.py`
+
+Direct pixel-wise variance test to validate filtered datasets.
+
+**Main Function:**
+
+- `run_variance_test()`: Computes and compares variance across datasets
+  - Calculates pixel-wise variance for original dataset (baseline)
+  - Calculates variance for high-variance (low-pass) dataset
+  - Calculates variance for low-variance (high-pass) dataset
+  - Reports percentage of variance captured by each
+  - Saves results to text file
+
+**Command-line Arguments:**
+
+- `--natural-dataset-dir`: Path to original CIFAR-10 (default: `./data/cifar10_natural`)
+- `--filtered-dataset-dir`: Path to filtered datasets (default: `./data/filtered_r10`)
+- `--cutoff-radius`: Cutoff radius used for filtering (default: 10)
+- `--n-samples`: Number of samples to use (default: 1000)
+- `--output-dir`: Directory for results (default: `./validation_results`)
+
+**Example Usage:**
+
+```bash
+python3 variance_test.py \
+  --natural-dataset-dir ./data/cifar10_natural \
+  --filtered-dataset-dir ./data/filtered_r10 \
+  --cutoff-radius 10 \
+  --n-samples 1000
+```
+
+### `validation/power_spectrum.py`
+
+Fourier power spectrum analysis (recreates paper's Figure A.12).
+
+**Main Function:**
+
+- `create_power_spectrum_plot()`: Creates power spectrum visualization
+  - Computes 2D FFT for each image and channel
+  - Calculates power (squared magnitude) of frequency components
+  - Averages across images and sorts by power
+  - Creates plot showing sharp "elbow" and "long tail"
+  - Marks cutoff radii on the plot
+  - Saves plot and numerical results
+
+**Command-line Arguments:**
+
+- `--natural-dataset-dir`: Path to original CIFAR-10 (default: `./data/cifar10_natural`)
+- `--n-samples`: Number of samples (default: 50, sufficient per paper)
+- `--output-dir`: Directory for results (default: `./validation_results`)
+- `--cutoff-radii`: Cutoff radii to mark on plot (default: [5, 10, 15])
+
+**Example Usage:**
+
+```bash
+python3 power_spectrum.py \
+  --natural-dataset-dir ./data/cifar10_natural \
+  --n-samples 50 \
+  --cutoff-radii 5 10 15
+```
+
 ### `filters/utils.py`
 
 Provides utilities for CIFAR-10 dataset management.
@@ -280,6 +345,91 @@ for r in [5, 8, 10, 12, 15]:
 - Can create ringing effects in filtered images
 - Simpler but less clean results
 - Use `use_butterworth=False` if needed for comparison
+
+## Dataset Validation
+
+Before training models, it's critical to verify that the filtered datasets correctly separate high-variance and low-variance components. We provide two validation methods based on the research methodology:
+
+### Quick Start: Run All Validations
+
+```bash
+# Run both validation methods automatically
+bash experiment_scripts/run_validation.sh
+```
+
+This will generate:
+- Power spectrum plot showing frequency distribution
+- Variance test results for each cutoff radius
+
+### Direct Variance Test
+
+Compute pixel-wise variance and verify that:
+- High-variance (low-pass) dataset captures **>80%** of original variance
+- Low-variance (high-pass) dataset captures **<20%** of original variance
+
+```bash
+cd validation
+
+# Test a specific cutoff radius
+python3 variance_test.py \
+  --natural-dataset-dir ../data/cifar10_natural \
+  --filtered-dataset-dir ../data/filtered_r10 \
+  --cutoff-radius 10 \
+  --n-samples 1000 \
+  --output-dir ../validation_results
+```
+
+**What it does:**
+1. Loads 1000 images from original and filtered datasets
+2. Calculates total pixel-wise variance for each
+3. Reports percentage of variance captured by each filtered dataset
+4. Saves results to `validation_results/variance_test_r{radius}.txt`
+
+**Expected Results:**
+```
+Original dataset variance:       100.00%
+High-variance dataset variance:   ~85-95%  ✓
+Low-variance dataset variance:    ~5-15%   ✓
+```
+
+### Power Spectrum Plot
+
+Creates a Fourier power spectrum plot (recreates Figure A.12 from the paper) showing:
+- Sharp "elbow": Variance concentrated in low-frequency components
+- Long "tail": Minimal variance in high-frequency components
+
+```bash
+cd validation
+
+# Create power spectrum plot
+python3 power_spectrum.py \
+  --natural-dataset-dir ../data/cifar10_natural \
+  --n-samples 50 \
+  --output-dir ../validation_results \
+  --cutoff-radii 5 10 15
+```
+
+**What it does:**
+1. Loads 50 images from original dataset
+2. Computes 2D FFT for each image and channel
+3. Calculates power spectrum (squared magnitude)
+4. Averages across all images and sorts by power
+5. Creates plot with marked cutoff radii
+6. Saves to `validation_results/power_spectrum_plot.png`
+
+**Interpretation:**
+The plot validates the filtering approach by showing that most variance is concentrated in the first few frequency components. This justifies:
+- Low-pass filters isolate the "head" (high-variance components)
+- High-pass filters isolate the "tail" (low-variance components)
+
+### Using Validation Results
+
+After running validation:
+
+1. **Check Power Spectrum Plot**: Confirm the sharp elbow and long tail
+2. **Review Variance Tests**: Ensure proper variance separation for each radius
+3. **Choose Optimal Radius**: Select the cutoff that best separates variance while maintaining enough information in each dataset
+4. **Proceed to Training**: Use validated datasets for model training
 
 ## Visualization
 
@@ -406,20 +556,30 @@ low_var_loader = create_dataloader(low_var_dataset, batch_size=128)
 
 ## Next Steps
 
+### Completed Tasks
+
+✅ **Dataset Creation**: Pipeline for creating filtered datasets with DFT  
+✅ **Visualization**: Tools for visualizing filtered images  
+✅ **Validation**: Both variance test and power spectrum analysis implemented
+
 ### Immediate Tasks
 
-0. **Scree Plot**: Verify the variance of the filtered dataset(s)
-1. **Hyperparameter Search**: Systematically evaluate different cutoff radii
-2. **Model Training**: Implement CNN training on filtered datasets
+1. **Run Validation**: Execute `bash experiment_scripts/run_validation.sh` to verify datasets
+2. **Model Training**: Implement CNN (ResNet-18) training on filtered datasets
 3. **Ensemble Creation**: Implement voting schemes for combining model predictions
-4. **Extra Filters (Time Willing)**: Implement different filters (e.g. wavelet transform) to reproduce results
+4. **Hyperparameter Tuning**: Use validation results to select optimal cutoff radius
 
 ### Advanced Tasks
 
-**Adversarial Robustness Testing**:
+1. **Adversarial Robustness Testing**:
    - Implement PGD (Projected Gradient Descent) attacks
    - Implement FGSM (Fast Gradient Sign Method) attacks
    - Evaluate ensemble robustness vs. single model
+
+2. **Alternative Filters** (Time Permitting):
+   - Implement Wavelet transform filtering
+   - Compare DFT with full PCA implementation
+   - Reproduce paper results with multiple filtering methods
 
 ## Research Background
 
