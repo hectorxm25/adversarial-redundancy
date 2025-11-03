@@ -207,8 +207,10 @@ def process_dataset(
     """
     # Create output directories
     output_path = Path(output_dir)
-    high_var_dir = output_path / f"{dataset_name}_high_variance_r{cutoff_radius}"
-    low_var_dir = output_path / f"{dataset_name}_low_variance_r{cutoff_radius}"
+    # Format cutoff_radius as integer if it's a whole number, otherwise as float
+    radius_str = f"{int(cutoff_radius)}" if cutoff_radius == int(cutoff_radius) else f"{cutoff_radius}"
+    high_var_dir = output_path / f"{dataset_name}_high_variance_r{radius_str}"
+    low_var_dir = output_path / f"{dataset_name}_low_variance_r{radius_str}"
     
     high_var_dir.mkdir(parents=True, exist_ok=True)
     low_var_dir.mkdir(parents=True, exist_ok=True)

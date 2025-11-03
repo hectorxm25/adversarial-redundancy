@@ -14,8 +14,11 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 from pathlib import Path
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Union
 import pickle
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for saving files
 
 
 class CIFAR10Dataset(Dataset):
@@ -315,49 +318,199 @@ def get_standard_transforms(
     return transforms.Compose(transform_list)
 
 
+def visualize_images(
+    input_filepath: str,
+    output_filepath: str,
+    n_images: int = 10,
+    dataset_type: str = "numpy",
+    grid_cols: int = 5
+) -> None:
+    """
+    Visualize the first N images from a dataset and save to file.
+    
+    This function loads images from either:
+    - A numpy dataset directory (containing images.npy and labels.npy)
+    - A raw CIFAR-10 dataset directory
+    
+    Args:
+        input_filepath: Path to dataset directory or numpy file
+        output_filepath: Path to save the visualization image
+        n_images: Number of images to visualize
+        dataset_type: Type of dataset - "numpy" for filtered datasets or "cifar10" for raw
+        grid_cols: Number of columns in the image grid
+        
+    Example:
+        # Visualize filtered dataset
+        visualize_images("./filtered_data/cifar10_train_high_variance_r10",
+                        "./visualizations/high_var_r10.png", n_images=10)
+        
+        # Visualize raw CIFAR-10
+        visualize_images("./data/cifar10_natural", 
+                        "./visualizations/natural.png", 
+                        n_images=10, 
+                        dataset_type="cifar10")
+    """
+    input_path = Path(input_filepath)
+    output_path = Path(output_filepath)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # CIFAR-10 class names
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                   'dog', 'frog', 'horse', 'ship', 'truck']
+    
+    # Load images and labels based on dataset type
+    if dataset_type == "numpy":
+        # Load from numpy files (filtered datasets)
+        images = np.load(input_path / "images.npy")
+        labels = np.load(input_path / "labels.npy")
+        # Load metadata if available
+        try:
+            metadata = np.load(input_path / "metadata.npy", allow_pickle=True).item()
+        except:
+            metadata = {}
+    elif dataset_type == "cifar10":
+        # Load from saved numpy CIFAR-10 format
+        try:
+            images, labels, metadata = load_saved_cifar10(input_filepath, "cifar10_train")
+        except:
+            # If that fails, try loading directly from torchvision
+            dataset = load_cifar10(root=input_filepath, train=True, download=False)
+            images = []
+            labels = []
+            for idx in range(min(n_images, len(dataset))):
+                img, label = dataset[idx]
+                if torch.is_tensor(img):
+                    img = img.permute(1, 2, 0).numpy()
+                if img.max() <= 1.0:
+                    img = (img * 255).astype(np.uint8)
+                images.append(img)
+                labels.append(label)
+            images = np.array(images)
+            labels = np.array(labels)
+            metadata = {}
+    else:
+        raise ValueError(f"Unknown dataset_type: {dataset_type}. Use 'numpy' or 'cifar10'")
+    
+    # Limit to n_images
+    n_images = min(n_images, len(images))
+    images = images[:n_images]
+    labels = labels[:n_images]
+    
+    # Calculate grid dimensions
+    grid_rows = (n_images + grid_cols - 1) // grid_cols
+    
+    # Create figure
+    fig, axes = plt.subplots(grid_rows, grid_cols, figsize=(grid_cols * 2, grid_rows * 2))
+    
+    # Flatten axes for easier iteration
+    # Handle the case where there's only one subplot (axes is not an array)
+    if grid_rows == 1 and grid_cols == 1:
+        axes = [axes]
+    else:
+        axes = axes.flatten()
+    
+    # Plot images
+    for idx in range(len(axes)):
+        ax = axes[idx]
+        if idx < n_images:
+            img = images[idx]
+            label = labels[idx]
+            
+            # Ensure image is in [0, 255] uint8 format
+            if img.dtype != np.uint8:
+                if img.max() <= 1.0:
+                    img = (img * 255).astype(np.uint8)
+                else:
+                    img = img.astype(np.uint8)
+            
+            # Display image
+            ax.imshow(img)
+            ax.set_title(f"#{idx}: {class_names[label]}", fontsize=10)
+            ax.axis('off')
+        else:
+            # Hide extra subplots
+            ax.axis('off')
+    
+    # Add metadata as title if available
+    title_parts = [f"First {n_images} Images"]
+    if 'cutoff_radius' in metadata:
+        title_parts.append(f"(r={metadata['cutoff_radius']})")
+    
+    plt.suptitle(" ".join(title_parts), fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    # Save figure
+    plt.savefig(output_filepath, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"✓ Saved visualization of {n_images} images to: {output_filepath}")
+
+
 if __name__ == "__main__":
     """
-    Example usage and testing.
+    Visualize images from datasets when called directly.
+    
+    Usage:
+        python3 utils.py
     """
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="Visualize CIFAR-10 images from dataset",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        "--input-filepath",
+        type=str,
+        default="./data/cifar10_natural",
+        help="Path to dataset directory"
+    )
+    parser.add_argument(
+        "--output-filepath",
+        type=str,
+        default="./visualizations/sample_images.png",
+        help="Path to save visualization"
+    )
+    parser.add_argument(
+        "--n-images",
+        type=int,
+        default=10,
+        help="Number of images to visualize"
+    )
+    parser.add_argument(
+        "--dataset-type",
+        type=str,
+        default="cifar10",
+        choices=["numpy", "cifar10"],
+        help="Type of dataset (numpy for filtered, cifar10 for raw)"
+    )
+    parser.add_argument(
+        "--grid-cols",
+        type=int,
+        default=5,
+        help="Number of columns in visualization grid"
+    )
+    
+    args = parser.parse_args()
+    
     print("="*60)
-    print("CIFAR-10 Data Utilities - Example Usage")
+    print("CIFAR-10 Image Visualization")
     print("="*60)
+    print(f"Input:  {args.input_filepath}")
+    print(f"Output: {args.output_filepath}")
+    print(f"Images: {args.n_images}")
+    print(f"Type:   {args.dataset_type}")
+    print()
     
-    # 1. Load CIFAR-10 train and test sets
-    print("\n1. Loading CIFAR-10 datasets...")
-    train_dataset = load_cifar10(root="./data", train=True, download=True)
-    test_dataset = load_cifar10(root="./data", train=False, download=True)
-    
-    print(f"   Train size: {len(train_dataset)}")
-    print(f"   Test size: {len(test_dataset)}")
-    
-    # 2. Save datasets to disk
-    print("\n2. Saving datasets to disk...")
-    train_dir = save_cifar10(train_dataset, "./saved_data", "cifar10_train")
-    test_dir = save_cifar10(test_dataset, "./saved_data", "cifar10_test")
-    
-    # 3. Load saved datasets
-    print("\n3. Loading saved datasets...")
-    train_images, train_labels, train_metadata = load_saved_cifar10("./saved_data", "cifar10_train")
-    print(f"   Loaded train images: {train_images.shape}")
-    print(f"   Loaded train labels: {train_labels.shape}")
-    print(f"   Metadata: {train_metadata}")
-    
-    # 4. Compute statistics
-    print("\n4. Computing dataset statistics...")
-    stats = get_cifar10_statistics(train_dataset)
-    
-    # 5. Create dataloader
-    print("\n5. Creating dataloader...")
-    train_loader = create_dataloader(train_dataset, batch_size=128, shuffle=True)
-    print(f"   Number of batches: {len(train_loader)}")
-    
-    # Test one batch
-    images, labels = next(iter(train_loader))
-    print(f"   Batch images shape: {images.shape}")
-    print(f"   Batch labels shape: {labels.shape}")
+    visualize_images(
+        input_filepath=args.input_filepath,
+        output_filepath=args.output_filepath,
+        n_images=args.n_images,
+        dataset_type=args.dataset_type,
+        grid_cols=args.grid_cols
+    )
     
     print("\n" + "="*60)
-    print("Utility functions tested successfully!")
+    print("Visualization complete!")
     print("="*60)
 

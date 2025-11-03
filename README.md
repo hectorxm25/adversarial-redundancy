@@ -16,12 +16,16 @@ These datasets can then be used to train an ensemble of models that leverage dif
 ```
 adversarial-redundancy/
 ├── filters/
-│   ├── dft.py        # 2D DFT filtering implementation
-│   ├── utils.py      # CIFAR-10 loading and data management utilities
-│   ├── pipeline.py   # Complete end-to-end pipeline script
-│   └── __init__.py   # (optional) Package initialization
-├── help.txt          # Detailed implementation guide and references
-└── README.md         # This file
+│   ├── dft.py              # 2D DFT filtering implementation
+│   ├── utils.py            # CIFAR-10 loading and data management utilities
+│   ├── pipeline.py         # Complete end-to-end pipeline script
+│   └── __init__.py         # (optional) Package initialization
+├── experiment_scripts/
+│   ├── hyperparam_search_dft.sh      # Run pipeline with multiple radii
+│   ├── visualize_first_images.sh    # Visualize single images from datasets
+│   └── visualize_comparison.sh      # Visualize multiple images for comparison
+├── help.txt            # Detailed implementation guide and references
+└── README.md           # This file
 ```
 
 ## Installation
@@ -33,6 +37,19 @@ adversarial-redundancy/
 - torchvision
 - NumPy
 - tqdm
+- matplotlib (for visualization)
+
+### Setup
+
+```bash
+# Install dependencies
+pip install torch torchvision numpy tqdm matplotlib
+
+# Or with conda
+conda install pytorch torchvision numpy tqdm matplotlib -c pytorch
+```
+
+## Usage
 
 ### Quick Start (Using Pipeline Script - Recommended)
 
@@ -190,6 +207,25 @@ Provides utilities for CIFAR-10 dataset management.
 - `create_dataloader()`: Creates PyTorch DataLoader with standard settings
 - `get_cifar10_statistics()`: Computes mean/std for normalization
 - `get_standard_transforms()`: Provides standard augmentation and normalization
+- `visualize_images()`: Visualizes and saves the first N images from a dataset
+
+**Visualization:**
+
+```bash
+# Visualize images from a filtered dataset
+python3 utils.py \
+  --input-filepath ./data/filtered_r10/cifar10_train_high_variance_r10 \
+  --output-filepath ./visualizations/high_var.png \
+  --n-images 10 \
+  --dataset-type numpy
+
+# Visualize natural CIFAR-10 images
+python3 utils.py \
+  --input-filepath ./data/cifar10_natural \
+  --output-filepath ./visualizations/natural.png \
+  --n-images 10 \
+  --dataset-type cifar10
+```
 
 **Dataset Information:**
 
@@ -244,6 +280,44 @@ for r in [5, 8, 10, 12, 15]:
 - Can create ringing effects in filtered images
 - Simpler but less clean results
 - Use `use_butterworth=False` if needed for comparison
+
+## Visualization
+
+After creating filtered datasets, visualize them to understand the filtering effects:
+
+### Quick Visualization (Single Images)
+
+```bash
+# Visualize first image from each dataset for quick comparison
+bash experiment_scripts/visualize_first_images.sh
+```
+
+This creates single-image visualizations:
+- `cifar10_natural_first_image.png`
+- `cifar10_train_high_variance_r{5,10,15}_first_image.png`
+- `cifar10_train_low_variance_r{5,10,15}_first_image.png`
+
+### Comprehensive Visualization (10 Images)
+
+```bash
+# Visualize 10 images from each dataset for thorough comparison
+bash experiment_scripts/visualize_comparison.sh
+```
+
+This creates multi-image grids showing the effects of different cutoff radii on various image types.
+
+### Custom Visualization
+
+```bash
+# Visualize specific dataset with custom parameters
+cd filters
+python3 utils.py \
+  --input-filepath ../data/filtered_r10/cifar10_train_high_variance_r10 \
+  --output-filepath ../visualizations/my_custom_viz.png \
+  --n-images 20 \
+  --dataset-type numpy \
+  --grid-cols 5
+```
 
 ## Workflow Example
 
