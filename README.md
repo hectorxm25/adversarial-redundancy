@@ -19,7 +19,11 @@ adversarial-redundancy/
 │   ├── dft.py              # 2D DFT filtering implementation
 │   ├── utils.py            # CIFAR-10 loading and data management utilities
 │   ├── pipeline.py         # Complete end-to-end pipeline script
-│   └── __init__.py         # (optional) Package initialization
+│   └── __init__.py         # Package initialization
+├── train/
+│   ├── __init__.py         # Package initialization
+│   ├── datasets.py         # Custom dataset wrappers for robustness library
+│   └── train_models.py     # ResNet18 training pipeline using robustness library
 ├── validation/
 │   ├── variance_test.py             # Direct pixel-wise variance validation
 │   └── power_spectrum.py            # Fourier power spectrum analysis
@@ -27,7 +31,15 @@ adversarial-redundancy/
 │   ├── hyperparam_search_dft.sh      # Run pipeline with multiple radii
 │   ├── visualize_first_images.sh    # Visualize single images from datasets
 │   ├── visualize_comparison.sh      # Visualize multiple images for comparison
-│   └── run_validation.sh            # Run both validation methods
+│   ├── run_validation.sh            # Run both validation methods
+│   └── run_training.sh              # Train all models (natural + filtered)
+├── data/                   # Dataset storage (created by pipeline)
+│   ├── cifar10_natural/    # Original CIFAR-10 dataset
+│   ├── filtered_r5/        # Filtered datasets with r=5
+│   ├── filtered_r10/       # Filtered datasets with r=10
+│   └── filtered_r15/       # Filtered datasets with r=15
+├── models/                 # Trained model checkpoints (created by training)
+├── logs/                   # Training and experiment logs
 ├── help.txt            # Detailed implementation guide and references
 └── README.md           # This file
 ```
@@ -42,15 +54,21 @@ adversarial-redundancy/
 - NumPy
 - tqdm
 - matplotlib (for visualization)
+- robustness (MadryLab library for adversarial training)
+- Pillow (PIL)
 
 ### Setup
 
 ```bash
-# Install dependencies
-pip install torch torchvision numpy tqdm matplotlib
+# Install core dependencies
+pip install torch torchvision numpy tqdm matplotlib pillow
 
-# Or with conda
-conda install pytorch torchvision numpy tqdm matplotlib -c pytorch
+# Install the robustness library (required for training)
+pip install git+https://github.com/MadryLab/robustness.git
+
+# Or with conda (then install robustness via pip)
+conda install pytorch torchvision numpy tqdm matplotlib pillow -c pytorch
+pip install git+https://github.com/MadryLab/robustness.git
 ```
 
 ## Usage
@@ -469,22 +487,198 @@ python3 utils.py \
   --grid-cols 5
 ```
 
+## Model Training
+
+The training pipeline uses the [robustness library](https://github.com/MadryLab/robustness) from MadryLab to train ResNet18 models. This library is specifically designed for adversarial robustness research and makes it easy to generate adversarial examples later.
+
+### Quick Start: Train All Models
+
+```bash
+# Train all models with default settings (100 epochs)
+bash experiment_scripts/run_training.sh
+
+# Train with custom epochs
+bash experiment_scripts/run_training.sh --epochs 50
+
+# Train only the natural model
+bash experiment_scripts/run_training.sh --natural-only
+
+# Train only filtered models
+bash experiment_scripts/run_training.sh --filtered-only
+```
+
+This will train **7 models** total:
+- 1 model on the natural CIFAR-10 dataset
+- 3 models on high-variance (low-pass) filtered datasets (r=5, 10, 15)
+- 3 models on low-variance (high-pass) filtered datasets (r=5, 10, 15)
+
+### Training Output
+
+After training completes, you'll find:
+
+```
+models/
+├── resnet18_natural/
+│   ├── checkpoint.pt           # Model checkpoint (robustness format)
+│   └── training_stats.json     # Training statistics
+├── resnet18_high_variance_r5/
+│   ├── checkpoint.pt
+│   └── training_stats.json
+├── resnet18_high_variance_r10/
+│   └── ...
+├── resnet18_high_variance_r15/
+│   └── ...
+├── resnet18_low_variance_r5/
+│   └── ...
+├── resnet18_low_variance_r10/
+│   └── ...
+├── resnet18_low_variance_r15/
+│   └── ...
+└── training_results.json       # Summary of all training runs
+
+logs/training/
+└── training_pipeline_YYYYMMDD_HHMMSS.log  # Detailed training logs
+```
+
+### Command-Line Options
+
+```bash
+bash experiment_scripts/run_training.sh [OPTIONS]
+
+Options:
+  --natural-dir DIR       Path to natural CIFAR-10 dataset (default: ./data/cifar10_natural)
+  --filtered-base-dir DIR Base path for filtered datasets (default: ./data)
+  --output-dir DIR        Directory for model checkpoints (default: ./models)
+  --log-dir DIR           Directory for training logs (default: ./logs/training)
+  --epochs N              Number of training epochs (default: 100)
+  --lr RATE               Initial learning rate (default: 0.1)
+  --batch-size N          Training batch size (default: 128)
+  --workers N             Number of data loading workers (default: 4)
+  --log-iters N           How often to log progress (default: 100)
+  --cutoff-radii "R1 R2"  Space-separated cutoff radii (default: "5 10 15")
+  --natural-only          Only train on natural dataset
+  --filtered-only         Only train on filtered datasets
+  --no-natural            Skip natural dataset training
+  --no-filtered           Skip filtered datasets training
+  -h, --help              Show help message
+```
+
+### Programmatic Training
+
+For custom training workflows:
+
+```python
+from train.train_models import train_single_model, run_training_pipeline
+from train.datasets import FilteredCIFAR10, load_filtered_dataset, load_natural_dataset
+
+# Option 1: Run the full pipeline
+results = run_training_pipeline(
+    natural_dir="./data/cifar10_natural",
+    filtered_base_dir="./data",
+    output_dir="./models",
+    log_dir="./logs/training",
+    epochs=100,
+    lr=0.1,
+    batch_size=128,
+    cutoff_radii=[5, 10, 15],
+)
+
+# Option 2: Train a single model
+train_images, train_labels, _ = load_natural_dataset("./data/cifar10_natural", "train")
+test_images, test_labels, _ = load_natural_dataset("./data/cifar10_natural", "test")
+
+dataset = FilteredCIFAR10(
+    data_path="./data/cifar10_natural",
+    dataset_type="natural",
+    train_images=train_images,
+    train_labels=train_labels,
+    test_images=test_images,
+    test_labels=test_labels,
+)
+
+checkpoint_path, stats = train_single_model(
+    dataset=dataset,
+    output_dir="./models",
+    model_name="my_custom_model",
+    epochs=50,
+)
+```
+
+### Loading Trained Models
+
+The trained models are saved in the robustness library's checkpoint format:
+
+```python
+from robustness import model_utils
+from train.datasets import FilteredCIFAR10
+
+# Create a dataset object (needed for model loading)
+dataset = FilteredCIFAR10(
+    data_path="./data/cifar10_natural",
+    dataset_type="natural",
+)
+
+# Load the trained model
+model, _ = model_utils.make_and_restore_model(
+    arch='resnet18',
+    dataset=dataset,
+    resume_path='./models/resnet18_natural/checkpoint.pt',
+)
+
+# The model is now ready for inference or adversarial attacks
+model.eval()
+```
+
+### GPU Memory Management
+
+The training pipeline automatically manages GPU memory to support sequential training runs:
+
+- After each model finishes training, the model weights are deleted from GPU memory
+- `torch.cuda.empty_cache()` is called to free cached memory
+- This ensures only one model occupies GPU memory at a time
+
+This is critical when training all 7 models sequentially on a single GPU.
+
+### Training Module Documentation
+
+#### `train/datasets.py`
+
+Custom dataset classes compatible with the robustness library:
+
+- `NumpyDataset`: PyTorch Dataset wrapper for numpy arrays
+- `FilteredCIFAR10`: Dataset class extending robustness's DataSet for our filtered datasets
+- `load_filtered_dataset()`: Load filtered dataset from disk
+- `load_natural_dataset()`: Load natural CIFAR-10 from disk
+
+#### `train/train_models.py`
+
+Main training script:
+
+- `train_single_model()`: Train a single ResNet18 model on a dataset
+- `run_training_pipeline()`: Run the complete training pipeline for all datasets
+- `cleanup_gpu_memory()`: Clean up GPU memory after training
+- `get_training_args()`: Create training arguments for the robustness library
+- `setup_logging()`: Set up verbose logging for training
+
 ## Workflow Example
 
 ### Using Pipeline Script (Simplest Method)
 
-For most use cases, simply use the provided pipeline script:
+For most use cases, simply use the provided pipeline scripts:
 
 ```bash
-# Process with single cutoff radius
-python filters/pipeline.py --cutoff-radius 10
-
-# Experiment with multiple radii (bash loop)
+# Step 1: Create filtered datasets
 for r in 5 10 15; do
   python filters/pipeline.py \
     --cutoff-radius $r \
     --filtered-dataset-dir ./data/filtered_r${r}
 done
+
+# Step 2: Validate the datasets
+bash experiment_scripts/run_validation.sh
+
+# Step 3: Train all models
+bash experiment_scripts/run_training.sh --epochs 100
 ```
 
 ### Complete Pipeline (Programmatic)
@@ -494,6 +688,8 @@ For advanced use cases requiring custom logic:
 ```python
 from filters.utils import load_cifar10, save_cifar10, create_dataloader
 from filters.dft import process_dataset, load_filtered_dataset
+from train.train_models import train_single_model
+from train.datasets import FilteredCIFAR10, load_natural_dataset
 import torch
 
 # 1. Data Loading
@@ -534,19 +730,26 @@ print("Loading filtered data for training...")
 high_var_images, high_var_labels, metadata = load_filtered_dataset(train_high_var)
 low_var_images, low_var_labels, metadata = load_filtered_dataset(train_low_var)
 
-# 5. Create dataloaders
-from filters.utils import CIFAR10Dataset
+# 5. Create dataset wrapper for robustness library
+train_images, train_labels, _ = load_natural_dataset("./data/cifar10_natural", "train")
+test_images, test_labels, _ = load_natural_dataset("./data/cifar10_natural", "test")
 
-high_var_dataset = CIFAR10Dataset(high_var_images, high_var_labels)
-low_var_dataset = CIFAR10Dataset(low_var_images, low_var_labels)
+dataset = FilteredCIFAR10(
+    data_path="./data/cifar10_natural",
+    dataset_type="natural",
+    train_images=train_images,
+    train_labels=train_labels,
+    test_images=test_images,
+    test_labels=test_labels,
+)
 
-high_var_loader = create_dataloader(high_var_dataset, batch_size=128)
-low_var_loader = create_dataloader(low_var_dataset, batch_size=128)
-
-# 6. Train models on each dataset
-# TODO: Implement model training
-# model_high_var = train_model(high_var_loader)
-# model_low_var = train_model(low_var_loader)
+# 6. Train model using robustness library
+checkpoint_path, stats = train_single_model(
+    dataset=dataset,
+    output_dir="./models",
+    model_name="resnet18_natural",
+    epochs=100,
+)
 
 # 7. Create ensemble and test adversarial robustness
 # TODO: Implement ensemble and adversarial testing
@@ -558,17 +761,18 @@ low_var_loader = create_dataloader(low_var_dataset, batch_size=128)
 
 ### Immediate Tasks
 
-1. **Run Validation**: Execute `bash experiment_scripts/run_validation.sh` to verify datasets
-2. **Model Training**: Implement CNN (ResNet-18) training on filtered datasets
+1. ~~**Run Validation**: Execute `bash experiment_scripts/run_validation.sh` to verify datasets~~ ✓
+2. ~~**Model Training**: Implement CNN (ResNet-18) training on filtered datasets~~ ✓
 3. **Ensemble Creation**: Implement voting schemes for combining model predictions
 4. **Hyperparameter Tuning**: Use validation results to select optimal cutoff radius
 
 ### Advanced Tasks
 
 1. **Adversarial Robustness Testing**:
-   - Implement PGD (Projected Gradient Descent) attacks
+   - Implement PGD (Projected Gradient Descent) attacks using the robustness library
    - Implement FGSM (Fast Gradient Sign Method) attacks
    - Evaluate ensemble robustness vs. single model
+   - Compare robustness across different cutoff radii
 
 2. **Alternative Filters** (Time Permitting):
    - Implement Wavelet transform filtering
