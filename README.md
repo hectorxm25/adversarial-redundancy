@@ -24,6 +24,9 @@ adversarial-redundancy/
 │   ├── __init__.py         # Package initialization
 │   ├── datasets.py         # Custom dataset wrappers for robustness library
 │   └── train_models.py     # ResNet18 training pipeline using robustness library
+├── evaluate/
+│   ├── __init__.py         # Package initialization
+│   └── evaluate_models.py  # Model evaluation pipeline for computing test accuracies
 ├── validation/
 │   ├── variance_test.py             # Direct pixel-wise variance validation
 │   └── power_spectrum.py            # Fourier power spectrum analysis
@@ -32,13 +35,15 @@ adversarial-redundancy/
 │   ├── visualize_first_images.sh    # Visualize single images from datasets
 │   ├── visualize_comparison.sh      # Visualize multiple images for comparison
 │   ├── run_validation.sh            # Run both validation methods
-│   └── run_training.sh              # Train all models (natural + filtered)
+│   ├── run_training.sh              # Train all models (natural + filtered)
+│   └── run_evaluation.sh            # Evaluate all trained models
 ├── data/                   # Dataset storage (created by pipeline)
 │   ├── cifar10_natural/    # Original CIFAR-10 dataset
 │   ├── filtered_r5/        # Filtered datasets with r=5
 │   ├── filtered_r10/       # Filtered datasets with r=10
 │   └── filtered_r15/       # Filtered datasets with r=15
 ├── models/                 # Trained model checkpoints (created by training)
+├── evaluation_results/     # Evaluation results and reports (created by evaluation)
 ├── logs/                   # Training and experiment logs
 ├── help.txt            # Detailed implementation guide and references
 └── README.md           # This file
@@ -660,6 +665,164 @@ Main training script:
 - `get_training_args()`: Create training arguments for the robustness library
 - `setup_logging()`: Set up verbose logging for training
 
+## Model Evaluation
+
+After training models, you can evaluate them on test datasets to compute accuracy metrics. The evaluation pipeline can evaluate models on both natural and filtered test sets.
+
+### Quick Start: Evaluate All Models
+
+```bash
+# Evaluate all trained models on natural and filtered test sets
+bash experiment_scripts/run_evaluation.sh
+
+# Evaluate only on natural test set
+bash experiment_scripts/run_evaluation.sh --natural-test-only
+
+# Evaluate only on filtered test sets
+bash experiment_scripts/run_evaluation.sh --filtered-test-only
+
+# Use specific GPU
+bash experiment_scripts/run_evaluation.sh --device cuda:1
+```
+
+### Evaluation Output
+
+After evaluation completes, you'll find:
+
+```
+evaluation_results/
+└── evaluation_results.json    # Complete evaluation results
+
+logs/evaluation/
+└── evaluation_pipeline_YYYYMMDD_HHMMSS.log  # Detailed evaluation logs
+```
+
+The JSON file contains accuracy metrics for each model-dataset combination:
+- Natural model evaluated on natural test set
+- Filtered models evaluated on natural test set
+- Filtered models evaluated on their corresponding filtered test sets
+
+### Command-Line Options
+
+```bash
+bash experiment_scripts/run_evaluation.sh [OPTIONS]
+
+Options:
+  --models-dir DIR        Directory containing trained models (default: ./models)
+  --natural-dir DIR       Path to natural CIFAR-10 dataset (default: ./data/cifar10_natural)
+  --filtered-base-dir DIR Base path for filtered datasets (default: ./data)
+  --output-dir DIR        Directory for evaluation results (default: ./evaluation_results)
+  --log-dir DIR           Directory for evaluation logs (default: ./logs/evaluation)
+  --batch-size N          Evaluation batch size (default: 128)
+  --workers N             Number of data loading workers (default: 4)
+  --device DEVICE         Device to use (e.g., 'cuda:0', 'cuda:1', 'cpu', or '0', '1' for GPU index)
+  --cutoff-radii "R1 R2"  Space-separated cutoff radii (default: "5 10 15")
+  --natural-only          Only evaluate natural model
+  --filtered-only         Only evaluate filtered models
+  --no-natural            Skip evaluating natural model
+  --no-filtered           Skip evaluating filtered models
+  --natural-test-only     Only evaluate on natural test set
+  --filtered-test-only    Only evaluate on filtered test sets
+  --no-natural-test       Skip evaluation on natural test set
+  --no-filtered-test      Skip evaluation on filtered test sets
+  --adv-eval              Perform adversarial evaluation (in addition to natural)
+  -h, --help              Show help message
+```
+
+### Programmatic Evaluation
+
+For custom evaluation workflows:
+
+```python
+from evaluate.evaluate_models import evaluate_model, evaluate_all_models
+from train.datasets import FilteredCIFAR10, load_natural_dataset
+
+# Option 1: Evaluate a single model
+train_images, train_labels, _ = load_natural_dataset("./data/cifar10_natural", "train")
+test_images, test_labels, _ = load_natural_dataset("./data/cifar10_natural", "test")
+
+dataset = FilteredCIFAR10(
+    data_path="./data/cifar10_natural",
+    dataset_type="natural",
+    train_images=train_images,
+    train_labels=train_labels,
+    test_images=test_images,
+    test_labels=test_labels,
+)
+
+results = evaluate_model(
+    checkpoint_path="./models/resnet18_natural/checkpoint.pt",
+    dataset=dataset,
+    model_name="natural",
+    batch_size=128,
+    device="cuda:0",
+)
+
+print(f"Natural Accuracy: {results['natural_accuracy']:.2f}%")
+print(f"Natural Loss: {results['natural_loss']:.4f}")
+
+# Option 2: Evaluate all models
+results = evaluate_all_models(
+    models_dir="./models",
+    natural_dir="./data/cifar10_natural",
+    filtered_base_dir="./data",
+    output_dir="./evaluation_results",
+    log_dir="./logs/evaluation",
+    batch_size=128,
+    device="cuda:0",
+)
+```
+
+### Evaluation Module Documentation
+
+#### `evaluate/evaluate_models.py`
+
+Evaluation pipeline script:
+
+- `evaluate_model()`: Evaluate a single trained model on a test dataset
+- `evaluate_all_models()`: Evaluate all trained models on multiple test sets
+- `run_evaluation_pipeline()`: Convenience wrapper for the full evaluation pipeline
+- `cleanup_gpu_memory()`: Clean up GPU memory after evaluation
+- `get_evaluation_args()`: Create evaluation arguments for the robustness library
+- `setup_logging()`: Set up verbose logging for evaluation
+
+The evaluation pipeline computes:
+- **Natural Accuracy**: Standard test accuracy on clean images
+- **Natural Loss**: Cross-entropy loss on clean images
+- **Adversarial Accuracy**: (optional) Accuracy under adversarial attacks
+- **Adversarial Loss**: (optional) Loss under adversarial attacks
+
+### Evaluation Results Format
+
+The evaluation results JSON file contains:
+
+```json
+{
+  "config": {
+    "models_dir": "./models",
+    "natural_dir": "./data/cifar10_natural",
+    "batch_size": 128,
+    ...
+  },
+  "evaluations": {
+    "natural_on_natural": {
+      "model_name": "natural_on_natural",
+      "checkpoint_path": "models/resnet18_natural/checkpoint.pt",
+      "natural_accuracy": 85.23,
+      "natural_loss": 0.4523,
+      "evaluation_time_seconds": 12.34,
+      ...
+    },
+    "resnet18_high_variance_r5_on_natural": {
+      ...
+    },
+    ...
+  },
+  "start_time": "2025-11-26T10:00:00",
+  "end_time": "2025-11-26T10:05:00"
+}
+```
+
 ## Workflow Example
 
 ### Using Pipeline Script (Simplest Method)
@@ -679,6 +842,9 @@ bash experiment_scripts/run_validation.sh
 
 # Step 3: Train all models
 bash experiment_scripts/run_training.sh --epochs 100
+
+# Step 4: Evaluate all models
+bash experiment_scripts/run_evaluation.sh
 ```
 
 ### Complete Pipeline (Programmatic)
@@ -751,7 +917,11 @@ checkpoint_path, stats = train_single_model(
     epochs=100,
 )
 
-# 7. Create ensemble and test adversarial robustness
+# 7. Create adversarial examples for each model given certain standard 
+# PGA parameters. TODO: once this is done see if the low-variance requires more epsilon to be attacked successfully. Then do the ensemble. 
+
+
+# 8. Create ensemble and test adversarial robustness
 # TODO: Implement ensemble and adversarial testing
 # ensemble = Ensemble([model_high_var, model_low_var])
 # test_adversarial_robustness(ensemble, test_loader)
