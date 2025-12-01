@@ -27,6 +27,9 @@ adversarial-redundancy/
 ├── evaluate/
 │   ├── __init__.py         # Package initialization
 │   └── evaluate_models.py  # Model evaluation pipeline for computing test accuracies
+├── adversarial/
+│   ├── __init__.py              # Package initialization
+│   └── generate_adversarial.py  # Adversarial example generation using PGD and FGSM
 ├── validation/
 │   ├── variance_test.py             # Direct pixel-wise variance validation
 │   └── power_spectrum.py            # Fourier power spectrum analysis
@@ -36,7 +39,8 @@ adversarial-redundancy/
 │   ├── visualize_comparison.sh      # Visualize multiple images for comparison
 │   ├── run_validation.sh            # Run both validation methods
 │   ├── run_training.sh              # Train all models (natural + filtered)
-│   └── run_evaluation.sh            # Evaluate all trained models
+│   ├── run_evaluation.sh            # Evaluate all trained models
+│   └── run_adversarial.sh           # Generate adversarial examples for all models
 ├── data/                   # Dataset storage (created by pipeline)
 │   ├── cifar10_natural/    # Original CIFAR-10 dataset
 │   ├── filtered_r5/        # Filtered datasets with r=5
@@ -823,6 +827,238 @@ The evaluation results JSON file contains:
 }
 ```
 
+## Adversarial Example Generation
+
+The adversarial generation pipeline uses the [robustness library](https://github.com/MadryLab/robustness) to generate adversarial examples for all trained models using PGD and FGSM attacks.
+
+**Key Features:**
+- Each model uses its **corresponding dataset** (natural or filtered) for generating adversarial examples
+- Adversarial examples are generated for **both train and test sets**
+- Attack success rates are reported separately for train and test
+
+### Quick Start: Generate Adversarial Examples
+
+```bash
+# Generate adversarial examples for all models (requires --device flag)
+bash experiment_scripts/run_adversarial.sh --device cuda:0
+
+# Generate using a specific GPU
+bash experiment_scripts/run_adversarial.sh --device 1
+
+# Generate only PGD examples
+bash experiment_scripts/run_adversarial.sh --device cuda:0 --attack-types pgd
+
+# Generate only for natural model
+bash experiment_scripts/run_adversarial.sh --device cuda:0 --natural-only
+```
+
+### Attack Types
+
+The pipeline supports two attack types:
+
+1. **PGD (Projected Gradient Descent)**: A powerful iterative attack that takes multiple gradient steps within an epsilon ball. This is the primary attack method for evaluating adversarial robustness.
+
+2. **FGSM (Fast Gradient Sign Method)**: A single-step attack that is faster but less powerful than PGD. Implemented as PGD with one iteration.
+
+### Attack Configuration
+
+Attack parameters are defined as global variables in `adversarial/generate_adversarial.py` and can be modified:
+
+```python
+# PGD Attack Configuration
+PGD_CONFIG = {
+    'eps': 8.0 / 255.0,          # Maximum perturbation (8/255 is standard for CIFAR-10)
+    'step_size': 2.0 / 255.0,    # Step size per iteration
+    'iterations': 20,             # Number of attack iterations
+    'constraint': 'inf',          # L-infinity norm constraint
+    'random_start': True,         # Random initialization within epsilon ball
+}
+
+# FGSM Attack Configuration
+FGSM_CONFIG = {
+    'eps': 8.0 / 255.0,          # Maximum perturbation
+    'step_size': 8.0 / 255.0,    # Step size = eps for single-step
+    'iterations': 1,              # Single step
+    'constraint': 'inf',          # L-infinity norm constraint
+    'random_start': False,        # No random start for pure FGSM
+}
+```
+
+### Adversarial Output
+
+After generation completes, you'll find:
+
+```
+adversarial_data/
+├── resnet18_natural/
+│   ├── pgd/
+│   │   ├── train/
+│   │   │   ├── adversarial_images.npy   # Train adversarial images (N, H, W, C) uint8
+│   │   │   ├── labels.npy               # Train original labels (N,)
+│   │   │   ├── clean_images.npy         # Train clean images (N, H, W, C) uint8
+│   │   │   └── metadata.json            # Train split stats
+│   │   ├── test/
+│   │   │   ├── adversarial_images.npy   # Test adversarial images
+│   │   │   ├── labels.npy               # Test original labels
+│   │   │   ├── clean_images.npy         # Test clean images
+│   │   │   └── metadata.json            # Test split stats
+│   │   └── metadata.json                # Combined metadata with train/test stats
+│   └── fgsm/
+│       ├── train/
+│       │   └── ...
+│       └── test/
+│           └── ...
+├── resnet18_high_variance_r5/
+│   └── ...  # Uses data/filtered_r5/cifar10_{train,test}_high_variance_r5.0/
+├── resnet18_high_variance_r10/
+│   └── ...  # Uses data/filtered_r10/...
+├── resnet18_high_variance_r15/
+│   └── ...  # Uses data/filtered_r15/...
+├── resnet18_low_variance_r5/
+│   └── ...  # Uses data/filtered_r5/cifar10_{train,test}_low_variance_r5.0/
+├── resnet18_low_variance_r10/
+│   └── ...
+├── resnet18_low_variance_r15/
+│   └── ...
+└── adversarial_generation_results.json  # Summary of all generations
+
+logs/adversarial/
+└── adversarial_pgd_YYYYMMDD_HHMMSS.log  # Detailed generation logs
+```
+
+**Note:** Each model uses its corresponding dataset:
+- `resnet18_natural` → uses `data/cifar10_natural/`
+- `resnet18_high_variance_r15` → uses `data/filtered_r15/cifar10_{train,test}_high_variance_r15.0/`
+- `resnet18_low_variance_r10` → uses `data/filtered_r10/cifar10_{train,test}_low_variance_r10.0/`
+
+### Command-Line Options
+
+```bash
+bash experiment_scripts/run_adversarial.sh --device DEVICE [OPTIONS]
+
+Required:
+  --device DEVICE         GPU device to use (e.g., 'cuda:0', 'cuda:1', '0', '1')
+
+Options:
+  --models-dir DIR        Directory containing trained models (default: ./models)
+  --natural-dir DIR       Path to natural CIFAR-10 dataset (default: ./data/cifar10_natural)
+  --output-dir DIR        Directory for adversarial datasets (default: ./adversarial_data)
+  --log-dir DIR           Directory for generation logs (default: ./logs/adversarial)
+  --batch-size N          Batch size for generation (default: 64)
+  --workers N             Number of data loading workers (default: 4)
+  --attack-types "T1 T2"  Space-separated attack types (default: "pgd fgsm")
+  --cutoff-radii "R1 R2"  Space-separated cutoff radii (default: "5 10 15")
+  --natural-only          Only generate for natural model
+  --filtered-only         Only generate for filtered models
+  --no-natural            Skip natural model
+  --no-filtered           Skip filtered models
+  -h, --help              Show help message
+```
+
+### Programmatic Adversarial Generation
+
+For custom generation workflows:
+
+```python
+from adversarial.generate_adversarial import (
+    generate_adversarial_dataset,
+    run_adversarial_pipeline,
+    load_dataset_for_model,
+    PGD_CONFIG,
+    FGSM_CONFIG,
+)
+from train.datasets import load_natural_dataset
+
+# Option 1: Generate for a single model (with both train and test)
+train_images, train_labels, _ = load_natural_dataset("./data/cifar10_natural", "train")
+test_images, test_labels, _ = load_natural_dataset("./data/cifar10_natural", "test")
+
+results = generate_adversarial_dataset(
+    model_path="./models/resnet18_natural/checkpoint.pt.best",
+    train_images=train_images,
+    train_labels=train_labels,
+    test_images=test_images,
+    test_labels=test_labels,
+    output_dir="./adversarial_data/resnet18_natural/pgd",
+    attack_type="pgd",
+    device="cuda:0",
+    batch_size=64,
+)
+
+print(f"Train attack success rate: {results['train']['attack_success_rate']:.2f}%")
+print(f"Test attack success rate: {results['test']['attack_success_rate']:.2f}%")
+
+# Option 2: Load correct dataset for a model automatically
+train_imgs, train_lbls, test_imgs, test_lbls = load_dataset_for_model(
+    model_name="resnet18_high_variance_r15",
+    filtered_base_dir="./data",
+    natural_dir="./data/cifar10_natural",
+)
+
+# Option 3: Run the full pipeline (handles all models and datasets automatically)
+results = run_adversarial_pipeline(
+    models_dir="./models",
+    natural_dir="./data/cifar10_natural",
+    filtered_base_dir="./data",
+    output_dir="./adversarial_data",
+    log_dir="./logs/adversarial",
+    device="cuda:0",
+    attack_types=['pgd', 'fgsm'],
+    cutoff_radii=[5, 10, 15],
+)
+```
+
+### Adversarial Module Documentation
+
+#### `adversarial/generate_adversarial.py`
+
+Adversarial example generation script:
+
+- `generate_adversarial_dataset()`: Generate adversarial examples for both train and test sets
+- `generate_adversarial_for_split()`: Generate adversarial examples for a single split (train or test)
+- `run_adversarial_pipeline()`: Run the complete generation pipeline for all models
+- `load_dataset_for_model()`: Load the correct train/test data for a given model
+- `get_dataset_paths()`: Get the correct data paths for a model (natural or filtered)
+- `get_attack_config()`: Get attack configuration for a given attack type
+- `setup_logging()`: Set up logging for generation
+- `cleanup_gpu_memory()`: Clean up GPU memory after generation
+
+### GPU Memory Management
+
+The adversarial generation pipeline:
+
+- Uses the mandatory `--device` flag to ensure all computation stays on a single specified GPU
+- Sets `CUDA_VISIBLE_DEVICES` in the shell script to isolate the GPU
+- Cleans up GPU memory after processing each model
+- This is critical on shared compute clusters where GPU isolation is important
+
+### Loading Adversarial Examples
+
+```python
+import numpy as np
+import json
+
+# Load adversarial dataset (test set)
+adv_dir = "./adversarial_data/resnet18_natural/pgd"
+test_adv_images = np.load(f"{adv_dir}/test/adversarial_images.npy")  # (N, H, W, C) uint8
+test_labels = np.load(f"{adv_dir}/test/labels.npy")                   # (N,)
+test_clean_images = np.load(f"{adv_dir}/test/clean_images.npy")       # (N, H, W, C) uint8
+
+# Load train set adversarial examples
+train_adv_images = np.load(f"{adv_dir}/train/adversarial_images.npy")
+train_labels = np.load(f"{adv_dir}/train/labels.npy")
+
+# Load combined metadata
+with open(f"{adv_dir}/metadata.json") as f:
+    metadata = json.load(f)
+
+print(f"Attack type: {metadata['attack_type']}")
+print(f"Train attack success rate: {metadata['train']['attack_success_rate']:.2f}%")
+print(f"Test attack success rate: {metadata['test']['attack_success_rate']:.2f}%")
+print(f"Train clean accuracy: {metadata['train']['clean_accuracy']:.2f}%")
+print(f"Test clean accuracy: {metadata['test']['clean_accuracy']:.2f}%")
+```
+
 ## Workflow Example
 
 ### Using Pipeline Script (Simplest Method)
@@ -845,6 +1081,9 @@ bash experiment_scripts/run_training.sh --epochs 100
 
 # Step 4: Evaluate all models
 bash experiment_scripts/run_evaluation.sh
+
+# Step 5: Generate adversarial examples
+bash experiment_scripts/run_adversarial.sh --device cuda:0
 ```
 
 ### Complete Pipeline (Programmatic)
@@ -917,9 +1156,36 @@ checkpoint_path, stats = train_single_model(
     epochs=100,
 )
 
-# 7. Create adversarial examples for each model given certain standard 
-# PGA parameters. TODO: once this is done see if the low-variance requires more epsilon to be attacked successfully. Then do the ensemble. 
+# 7. Create adversarial examples for each model
+from adversarial.generate_adversarial import generate_adversarial_dataset
 
+# Generate PGD adversarial examples (for both train and test)
+results = generate_adversarial_dataset(
+    model_path="./models/resnet18_natural/checkpoint.pt.best",
+    train_images=train_images,
+    train_labels=train_labels,
+    test_images=test_images,
+    test_labels=test_labels,
+    output_dir="./adversarial_data/resnet18_natural/pgd",
+    attack_type="pgd",
+    device="cuda:0",
+)
+print(f"PGD train attack success: {results['train']['attack_success_rate']:.2f}%")
+print(f"PGD test attack success: {results['test']['attack_success_rate']:.2f}%")
+
+# Generate FGSM adversarial examples
+results = generate_adversarial_dataset(
+    model_path="./models/resnet18_natural/checkpoint.pt.best",
+    train_images=train_images,
+    train_labels=train_labels,
+    test_images=test_images,
+    test_labels=test_labels,
+    output_dir="./adversarial_data/resnet18_natural/fgsm",
+    attack_type="fgsm",
+    device="cuda:0",
+)
+print(f"FGSM train attack success: {results['train']['attack_success_rate']:.2f}%")
+print(f"FGSM test attack success: {results['test']['attack_success_rate']:.2f}%")
 
 # 8. Create ensemble and test adversarial robustness
 # TODO: Implement ensemble and adversarial testing
@@ -933,16 +1199,18 @@ checkpoint_path, stats = train_single_model(
 
 1. ~~**Run Validation**: Execute `bash experiment_scripts/run_validation.sh` to verify datasets~~ ✓
 2. ~~**Model Training**: Implement CNN (ResNet-18) training on filtered datasets~~ ✓
-3. **Ensemble Creation**: Implement voting schemes for combining model predictions
-4. **Hyperparameter Tuning**: Use validation results to select optimal cutoff radius
+3. ~~**Adversarial Example Generation**: Implement PGD and FGSM attacks using the robustness library~~ ✓
+4. **Ensemble Creation**: Implement voting schemes for combining model predictions
+5. **Hyperparameter Tuning**: Use validation results to select optimal cutoff radius
 
 ### Advanced Tasks
 
 1. **Adversarial Robustness Testing**:
-   - Implement PGD (Projected Gradient Descent) attacks using the robustness library
-   - Implement FGSM (Fast Gradient Sign Method) attacks
+   - ~~Implement PGD (Projected Gradient Descent) attacks using the robustness library~~ ✓
+   - ~~Implement FGSM (Fast Gradient Sign Method) attacks~~ ✓
    - Evaluate ensemble robustness vs. single model
    - Compare robustness across different cutoff radii
+   - Test if low-variance models require larger epsilon for successful attacks
 
 2. **Alternative Filters** (Time Permitting):
    - Implement Wavelet transform filtering
