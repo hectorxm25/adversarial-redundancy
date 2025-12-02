@@ -30,6 +30,10 @@ adversarial-redundancy/
 ├── adversarial/
 │   ├── __init__.py              # Package initialization
 │   └── generate_adversarial.py  # Adversarial example generation using PGD and FGSM
+├── ensemble/
+│   ├── __init__.py         # Package initialization
+│   ├── ensemble.py         # RedundancyEnsemble class for combining models
+│   └── inference.py        # Inference script for ensemble evaluation
 ├── validation/
 │   ├── variance_test.py             # Direct pixel-wise variance validation
 │   └── power_spectrum.py            # Fourier power spectrum analysis
@@ -48,6 +52,7 @@ adversarial-redundancy/
 │   └── filtered_r15/       # Filtered datasets with r=15
 ├── models/                 # Trained model checkpoints (created by training)
 ├── evaluation_results/     # Evaluation results and reports (created by evaluation)
+├── ensemble_results/       # Ensemble inference results (created by ensemble)
 ├── logs/                   # Training and experiment logs
 ├── help.txt            # Detailed implementation guide and references
 └── README.md           # This file
@@ -1059,6 +1064,261 @@ print(f"Train clean accuracy: {metadata['train']['clean_accuracy']:.2f}%")
 print(f"Test clean accuracy: {metadata['test']['clean_accuracy']:.2f}%")
 ```
 
+## Ensemble Inference
+
+The ensemble module combines three models—natural, high-variance, and low-variance—to create a redundancy-based voting system. This approach leverages the fact that perceptual tasks have embedded redundancy, where different frequency components of images can independently contribute to classification.
+
+### Architecture
+
+The `RedundancyEnsemble` processes input images through three parallel pathways:
+
+1. **Natural Pathway**: Input image → Natural model → Prediction
+2. **High-Variance Pathway**: Input image → Low-pass filter → High-variance model → Prediction
+3. **Low-Variance Pathway**: Input image → High-pass filter → Low-variance model → Prediction
+
+The filtering is performed on-the-fly using the same Butterworth DFT filters used during dataset creation.
+
+### Voting Modes
+
+The ensemble supports two voting modes:
+
+- **Weak Mode (Majority Vote)**: The class receiving at least 2 out of 3 votes wins. If all three models predict different classes (edge case), a `NoClearWinner` exception is raised.
+
+- **Strong Mode (Unanimous Vote)**: All three models must agree on the same class. If they don't unanimously agree, a `NoClearWinner` exception is raised.
+
+### Quick Start: Run Ensemble Inference
+
+```bash
+# Evaluate ensemble on natural test set with weak voting and r=10
+python ensemble/inference.py --radius 10 --voting weak --dataset natural
+
+# Evaluate ensemble on natural test set with strong voting
+python ensemble/inference.py --radius 10 --voting strong --dataset natural
+
+# Evaluate on high-variance filtered test set
+python ensemble/inference.py --radius 15 --voting weak --dataset high_variance
+
+# Evaluate on adversarial examples (PGD attack on natural model)
+python ensemble/inference.py --radius 10 --voting weak \
+  --dataset adversarial \
+  --adversarial-type pgd \
+  --adversarial-model natural
+
+# Evaluate on adversarial examples from a specific model
+python ensemble/inference.py --radius 10 --voting strong \
+  --dataset adversarial \
+  --adversarial-type fgsm \
+  --adversarial-model high_variance_r10
+```
+
+### Command-Line Options
+
+```bash
+python ensemble/inference.py [OPTIONS]
+
+Required:
+  --radius, -r RADIUS       Cutoff radius (5, 10, or 15)
+  --voting, -v MODE         Voting mode: 'weak' (majority) or 'strong' (unanimous)
+
+Dataset Selection:
+  --dataset, -d TYPE        Dataset type: 'natural', 'high_variance', 'low_variance', 'adversarial'
+  --split SPLIT             Dataset split: 'train' or 'test' (default: test)
+  --adversarial-type TYPE   Adversarial type: 'pgd' or 'fgsm' (only for adversarial dataset)
+  --adversarial-model NAME  Model name for adversarial examples (e.g., 'natural', 'high_variance_r10')
+
+Paths:
+  --models-dir DIR          Directory containing trained models (default: ./models)
+  --natural-dir DIR         Path to natural CIFAR-10 (default: ./data/cifar10_natural)
+  --filtered-base-dir DIR   Base path for filtered datasets (default: ./data)
+  --adversarial-dir DIR     Path to adversarial examples (default: ./adversarial_data)
+  --output-dir DIR          Directory for results (default: ./ensemble_results)
+  --log-dir DIR             Directory for logs (default: ./logs/ensemble)
+
+Inference Parameters:
+  --batch-size N            Batch size (default: 128)
+  --workers N               Data loading workers (default: 4)
+  --device DEVICE           Device to use (e.g., 'cuda:0', 'cpu')
+
+Output Options:
+  --save-predictions        Save individual predictions to output file
+  --quiet                   Only output essential information
+```
+
+### Ensemble Output
+
+After running inference, you'll find:
+
+```
+ensemble_results/
+├── ensemble_r10_weak_natural_test.json     # Results on natural test set
+├── ensemble_r10_strong_natural_test.json   # Strong voting results
+├── ensemble_r10_weak_adversarial_pgd_natural_test.json  # Adversarial results
+└── ...
+
+logs/ensemble/
+└── inference_r10_weak_YYYYMMDD_HHMMSS.log  # Detailed inference logs
+```
+
+The JSON results file contains:
+
+```json
+{
+  "config": {
+    "cutoff_radius": 10,
+    "voting_mode": "weak",
+    "dataset": "natural",
+    "split": "test",
+    "timestamp": "2025-11-26T12:00:00"
+  },
+  "total_samples": 10000,
+  "valid_predictions": 10000,
+  "no_winner_count": 0,
+  "no_winner_rate": 0.0,
+  "accuracies": {
+    "ensemble": 85.50,
+    "natural": 85.23,
+    "high_variance": 82.10,
+    "low_variance": 45.30
+  },
+  "agreement": {
+    "natural_high_variance": 89.50,
+    "natural_low_variance": 52.30,
+    "high_low_variance": 51.20,
+    "all_three": 45.10
+  }
+}
+```
+
+### Programmatic Usage
+
+For custom workflows, use the ensemble directly in Python:
+
+```python
+from ensemble.ensemble import RedundancyEnsemble, NoClearWinner, load_ensemble
+from train.datasets import load_natural_dataset
+import torch
+
+# Option 1: Load ensemble using convenience function
+ensemble = load_ensemble(
+    models_dir="./models",
+    cutoff_radius=10,
+    voting_mode="weak",  # or "strong"
+    device="cuda:0",
+)
+
+# Option 2: Load with explicit paths
+ensemble = RedundancyEnsemble(
+    natural_model_path="./models/resnet18_natural/checkpoint.pt.best",
+    high_var_model_path="./models/resnet18_high_variance_r10/checkpoint.pt.best",
+    low_var_model_path="./models/resnet18_low_variance_r10/checkpoint.pt.best",
+    cutoff_radius=10.0,
+    voting_mode="weak",
+    device="cuda:0",
+)
+
+# Load test data
+test_images, test_labels, _ = load_natural_dataset("./data/cifar10_natural", "test")
+
+# Prepare a batch (example with first 32 images)
+from torchvision import transforms
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2470, 0.2435, 0.2616])
+])
+
+# Convert to tensor batch
+from PIL import Image
+import numpy as np
+
+images_batch = []
+for img in test_images[:32]:
+    pil_img = Image.fromarray(img)
+    tensor_img = transform(pil_img)
+    images_batch.append(tensor_img)
+
+images_tensor = torch.stack(images_batch).to("cuda:0")
+labels_tensor = torch.tensor(test_labels[:32]).to("cuda:0")
+
+# Run inference
+with torch.no_grad():
+    # Get voted predictions and individual predictions
+    voted_preds, nat_preds, high_preds, low_preds = ensemble(
+        images_tensor, 
+        return_all_predictions=True
+    )
+
+# Compute accuracies
+print(f"Ensemble accuracy: {(voted_preds == labels_tensor).float().mean() * 100:.2f}%")
+print(f"Natural accuracy: {(nat_preds == labels_tensor).float().mean() * 100:.2f}%")
+print(f"High-variance accuracy: {(high_preds == labels_tensor).float().mean() * 100:.2f}%")
+print(f"Low-variance accuracy: {(low_preds == labels_tensor).float().mean() * 100:.2f}%")
+
+# Handle NoClearWinner in strong mode
+ensemble_strong = load_ensemble("./models", 10, voting_mode="strong", device="cuda:0")
+
+try:
+    voted_preds = ensemble_strong(images_tensor)
+except NoClearWinner as e:
+    print(f"No unanimous vote: {e.predictions}")
+    # Handle the case where models disagree
+```
+
+### Ensemble Module Documentation
+
+#### `ensemble/ensemble.py`
+
+Core ensemble implementation:
+
+- `NoClearWinner`: Exception raised when voting cannot determine a winner
+- `RedundancyEnsemble`: Main ensemble class combining three models
+  - `forward()`: Run inference with voting
+  - `predict_with_logits()`: Get predictions with raw logits from all models
+  - `get_individual_accuracies()`: Compute accuracy for each model and ensemble
+- `load_ensemble()`: Convenience function to load an ensemble from a models directory
+
+#### `ensemble/inference.py`
+
+Inference script for running ensemble evaluation:
+
+- `run_inference()`: Run inference on a dataset and compute metrics
+- `load_dataset()`: Load a dataset for inference (natural, filtered, or adversarial)
+- `main()`: Entry point with command-line argument parsing
+
+### NoClearWinner Exception
+
+The `NoClearWinner` exception is raised when the ensemble cannot determine a clear winner:
+
+```python
+from ensemble.ensemble import NoClearWinner
+
+try:
+    predictions = ensemble(images)
+except NoClearWinner as e:
+    # e.predictions contains (natural_pred, high_var_pred, low_var_pred)
+    print(f"Models disagreed: {e.predictions}")
+    print(f"Reason: {e.message}")
+    
+    # You can implement fallback logic here, e.g.:
+    # - Use the natural model's prediction
+    # - Use the model with highest confidence
+    # - Abstain from prediction
+```
+
+### GPU Memory Management
+
+The ensemble automatically manages GPU memory:
+
+- All three models are loaded to the specified device
+- Pre-computed Butterworth masks are stored on the device for efficiency
+- DFT filtering is performed on GPU using PyTorch's FFT operations
+
+For systems with limited GPU memory, consider:
+
+```python
+# Use CPU if GPU memory is constrained
+ensemble = load_ensemble("./models", 10, voting_mode="weak", device="cpu")
+```
+
 ## Workflow Example
 
 ### Using Pipeline Script (Simplest Method)
@@ -1084,6 +1344,14 @@ bash experiment_scripts/run_evaluation.sh
 
 # Step 5: Generate adversarial examples
 bash experiment_scripts/run_adversarial.sh --device cuda:0
+
+# Step 6: Run ensemble inference
+python ensemble/inference.py --radius 10 --voting weak --dataset natural
+python ensemble/inference.py --radius 10 --voting strong --dataset natural
+
+# Step 7: Test ensemble on adversarial examples
+python ensemble/inference.py --radius 10 --voting weak \
+  --dataset adversarial --adversarial-type pgd --adversarial-model natural
 ```
 
 ### Complete Pipeline (Programmatic)
@@ -1200,7 +1468,7 @@ print(f"FGSM test attack success: {results['test']['attack_success_rate']:.2f}%"
 1. ~~**Run Validation**: Execute `bash experiment_scripts/run_validation.sh` to verify datasets~~ ✓
 2. ~~**Model Training**: Implement CNN (ResNet-18) training on filtered datasets~~ ✓
 3. ~~**Adversarial Example Generation**: Implement PGD and FGSM attacks using the robustness library~~ ✓
-4. **Ensemble Creation**: Implement voting schemes for combining model predictions
+4. ~~**Ensemble Creation**: Implement voting schemes for combining model predictions~~ ✓
 5. **Hyperparameter Tuning**: Use validation results to select optimal cutoff radius
 
 ### Advanced Tasks
