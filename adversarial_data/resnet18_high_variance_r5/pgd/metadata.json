@@ -1,0 +1,29 @@
+{
+  "attack_type": "pgd",
+  "attack_config": {
+    "eps": 0.03137254901960784,
+    "step_size": 0.00784313725490196,
+    "iterations": 20,
+    "constraint": "inf",
+    "random_start": true
+  },
+  "model_path": "./models/resnet18_high_variance_r5/checkpoint.pt.best",
+  "train": {
+    "split": "train",
+    "num_samples": 50000,
+    "clean_accuracy": 93.646,
+    "adversarial_accuracy": 1.01,
+    "attack_success_rate": 98.99,
+    "generation_time_seconds": 117.452894
+  },
+  "test": {
+    "split": "test",
+    "num_samples": 10000,
+    "clean_accuracy": 76.42,
+    "adversarial_accuracy": 1.12,
+    "attack_success_rate": 98.88,
+    "generation_time_seconds": 30.050512
+  },
+  "generation_date": "2025-12-01T11:00:53.949943",
+  "device": "cuda:0"
+}

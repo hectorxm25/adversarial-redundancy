@@ -1,0 +1,9 @@
+{
+  "model_name": "resnet18_high_variance_r15",
+  "epochs": 100,
+  "lr": 0.1,
+  "batch_size": 128,
+  "training_time_seconds": 2982.26996,
+  "checkpoint_path": "models/resnet18_high_variance_r15/checkpoint.pt",
+  "device": "cuda:1"
+}

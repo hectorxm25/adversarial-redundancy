@@ -1,0 +1,8 @@
+{
+  "split": "train",
+  "num_samples": 50000,
+  "clean_accuracy": 93.646,
+  "adversarial_accuracy": 1.01,
+  "attack_success_rate": 98.99,
+  "generation_time_seconds": 117.452894
+}

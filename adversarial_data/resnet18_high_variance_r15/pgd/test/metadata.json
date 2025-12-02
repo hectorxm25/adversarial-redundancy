@@ -1,0 +1,8 @@
+{
+  "split": "test",
+  "num_samples": 10000,
+  "clean_accuracy": 83.64,
+  "adversarial_accuracy": 13.19,
+  "attack_success_rate": 86.81,
+  "generation_time_seconds": 33.430038
+}

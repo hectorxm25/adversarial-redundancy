@@ -1,0 +1,29 @@
+{
+  "attack_type": "fgsm",
+  "attack_config": {
+    "eps": 0.03137254901960784,
+    "step_size": 0.03137254901960784,
+    "iterations": 1,
+    "constraint": "inf",
+    "random_start": false
+  },
+  "model_path": "./models/resnet18_high_variance_r10/checkpoint.pt.best",
+  "train": {
+    "split": "train",
+    "num_samples": 50000,
+    "clean_accuracy": 96.036,
+    "adversarial_accuracy": 38.476,
+    "attack_success_rate": 61.524,
+    "generation_time_seconds": 16.983809
+  },
+  "test": {
+    "split": "test",
+    "num_samples": 10000,
+    "clean_accuracy": 82.28,
+    "adversarial_accuracy": 32.55,
+    "attack_success_rate": 67.45,
+    "generation_time_seconds": 3.711669
+  },
+  "generation_date": "2025-12-01T11:11:16.211572",
+  "device": "cuda:0"
+}
