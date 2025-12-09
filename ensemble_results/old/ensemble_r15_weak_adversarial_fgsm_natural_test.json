@@ -1,0 +1,28 @@
+{
+  "total_samples": 10000,
+  "valid_predictions": 6676,
+  "no_winner_count": 3324,
+  "no_winner_rate": 33.239999999999995,
+  "accuracies": {
+    "ensemble": 66.32714200119833,
+    "natural": 44.690001010894775,
+    "high_variance": 69.31999921798706,
+    "low_variance": 10.000000149011612
+  },
+  "agreement": {
+    "natural_high_variance": 58.99999737739563,
+    "natural_low_variance": 12.510000169277191,
+    "high_low_variance": 11.410000175237656,
+    "all_three": 8.079999685287476
+  },
+  "config": {
+    "cutoff_radius": 15,
+    "voting_mode": "weak",
+    "dataset": "adversarial",
+    "split": "test",
+    "adversarial_type": "fgsm",
+    "adversarial_model": "natural",
+    "batch_size": 128,
+    "timestamp": "2025-12-01T14:53:35.759816"
+  }
+}

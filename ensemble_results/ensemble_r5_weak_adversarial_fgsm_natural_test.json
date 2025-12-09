@@ -1,19 +1,19 @@
 {
   "total_samples": 10000,
-  "valid_predictions": 5304,
-  "no_winner_count": 4696,
-  "no_winner_rate": 46.96,
+  "valid_predictions": 5558,
+  "no_winner_count": 4442,
+  "no_winner_rate": 44.42,
   "accuracies": {
-    "ensemble": 66.42156862745098,
-    "natural": 44.690001010894775,
-    "high_variance": 55.19000291824341,
-    "low_variance": 10.000000149011612
+    "ensemble": 49.028427491903564,
+    "natural": 44.679999351501465,
+    "high_variance": 38.58000040054321,
+    "low_variance": 14.090000092983246
   },
   "agreement": {
-    "natural_high_variance": 44.20999884605408,
-    "natural_low_variance": 9.969999641180038,
-    "high_low_variance": 6.040000170469284,
-    "all_three": 3.5900000482797623
+    "natural_high_variance": 32.82000124454498,
+    "natural_low_variance": 14.9399995803833,
+    "high_low_variance": 24.68000054359436,
+    "all_three": 8.429999649524689
   },
   "config": {
     "cutoff_radius": 5,
@@ -23,6 +23,6 @@
     "adversarial_type": "fgsm",
     "adversarial_model": "natural",
     "batch_size": 128,
-    "timestamp": "2025-12-01T14:27:24.230262"
+    "timestamp": "2025-12-09T12:41:52.989329"
   }
 }
